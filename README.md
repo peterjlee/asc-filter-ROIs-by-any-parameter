@@ -7,4 +7,4 @@
   &nbsp;&nbsp;&nbsp;Standard deviation based ranges can be easily selected.<br />
   &nbsp;&nbsp;&nbsp;The filtered-out object color can be changed.<br />
  </p>
-<p><img src=https://fs.magnet.fsu.edu/~lee/asc/ImageJUtilities/IA_Images/Filter_ROIs_Menu1+2-horz_PAL_1264x601.png"  height="450" /> </p>
+<p><img src=https://fs.magnet.fsu.edu/~lee/asc/ImageJUtilities/IA_Images/Filter_ROIs_Menu1+2-horz_PAL_1264x601.png"> </p>
