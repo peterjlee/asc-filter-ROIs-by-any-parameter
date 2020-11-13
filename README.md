@@ -7,7 +7,7 @@
   &nbsp;&nbsp;&nbsp;Standard deviation based ranges can be easily selected.<br />
   &nbsp;&nbsp;&nbsp;The filtered-out object color can be changed.<br />
  </p>
-  <p><img src="https://fs.magnet.fsu.edu/~lee/asc/ImageJUtilities/IA_Images/Filter_ROIs_Menu1+2-horz_PAL_1264x601.png" alt="ASC Filter ROIs by any parameter" /> </p>
+  <p><img src="/images/Filter_ROIs_Menu1+2-horz_PAL_1264x601.png" alt="ASC Filter ROIs by any parameter" /> </p>
 <p><sub><sup>
  <strong>Legal Notice:</strong> <br />
 These macros have been developed to demonstrate the power of the ImageJ macro language and we assume no responsibility whatsoever for its use by other parties, and make no guarantees, expressed or implied, about its quality, reliability, or any other characteristic. On the other hand we hope you do have fun with them without causing harm.
