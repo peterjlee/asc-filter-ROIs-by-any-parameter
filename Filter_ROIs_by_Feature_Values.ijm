@@ -1,8 +1,11 @@
 /*	FilterROIs by any combination of values in a results table
 	v190604b - 1st public version. Minor cosmetic tweaks and added log stats: v190607
+	v211025 Updated functions
+	v211104: Updated stripKnownExtensionsFromString function    v211112: Again
  */
  
 macro "Filter ROIs by Feature Value"{
+	macroL = "ASC-Filter_ROIs_by_Feature_Values_v211112.ijm";
 	requires("1.52a");
 	// setBatchMode("true");
 	saveSettings;
@@ -48,6 +51,7 @@ macro "Filter ROIs by Feature Value"{
 	checkboxGroupColumns = 5;
 	checkboxGroupRows = round(mHdrs/checkboxGroupColumns)+1; /* Add +1 to make sure that there are enough cells */
 	Dialog.create("Select ROI Filters");
+		Dialog.addMessage("Macro version: " + macroL);
 		Dialog.addMessage("Select parameters to use for filtering image:\n" + tN);
 		Dialog.addCheckboxGroup(checkboxGroupRows,checkboxGroupColumns,measurements,mFilters);
 		Dialog.addCheckbox("Remove black edge objects, their ROIs and their table values?", clearEdge);
@@ -188,16 +192,20 @@ macro "Filter ROIs by Feature Value"{
    */
 
 	function arrayToString(array,delimiters){
-		/* 1st version April 2019 PJL */
+		/* 1st version April 2019 PJL
+			v190722 Modified to handle zero length array */
+		string = "";
 		for (i=0; i<array.length; i++){
-			if (i==0) string = "" + array[0];
+			if (i==0) string += array[0];
 			else  string = string + delimiters + array[i];
 		}
 		return string;
 	}
 	function checkForPlugin(pluginName) {
-		/* v161102 changed to true-false */
-		var pluginCheck = false, subFolderCount = 0;
+		/* v161102 changed to true-false
+			v180831 some cleanup
+			v210429 Expandable array version */
+		var pluginCheck = false;
 		if (getDirectory("plugins") == "") restoreExit("Failure to find any plugins!");
 		else pluginDir = getDirectory("plugins");
 		if (!endsWith(pluginName, ".jar")) pluginName = pluginName + ".jar";
@@ -207,14 +215,13 @@ macro "Filter ROIs by Feature Value"{
 		}
 		else {
 			pluginList = getFileList(pluginDir);
-			subFolderList = newArray(lengthOf(pluginList));
-			for (i=0; i<lengthOf(pluginList); i++) {
+			subFolderList = newArray;
+			for (i=0,subFolderCount=0; i<lengthOf(pluginList); i++) {
 				if (endsWith(pluginList[i], "/")) {
 					subFolderList[subFolderCount] = pluginList[i];
-					subFolderCount = subFolderCount +1;
+					subFolderCount++;
 				}
 			}
-			subFolderList = Array.slice(subFolderList, 0, subFolderCount);
 			for (i=0; i<lengthOf(subFolderList); i++) {
 				if (File.exists(pluginDir + subFolderList[i] +  "\\" + pluginName)) {
 					pluginCheck = true;
@@ -247,29 +254,88 @@ macro "Filter ROIs by Feature Value"{
 	}
 	function checkForRoiManager() {
 		/* v161109 adds the return of the updated ROI count and also adds dialog if there are already entries just in case . .
-			v180104 only asks about ROIs if there is a mismatch with the results */
+			v180104 only asks about ROIs if there is a mismatch with the results
+			v190628 adds option to import saved ROI set
+			v210428	include thresholding if necessary and color check
+			NOTE: Requires ASC restoreExit function, which assumes that saveSettings has been run at the beginning of the macro
+			*/
+		functionL = "checkForRoiManager_v210428";
 		nROIs = roiManager("count");
-		nRES = nResults; /* Used to check for ROIs:Results mismatch */
-		if(nROIs==0) runAnalyze = true; /* Assumes that ROIs are required and that is why this function is being called */
-		else if(nROIs!=nRES) runAnalyze = getBoolean("There are " + nRES + " results and " + nROIs + " ROIs; do you want to clear the ROI manager and reanalyze?");
-		else runAnalyze = false;
-		if (runAnalyze) {
-			roiManager("reset");
-			Dialog.create("Analysis check");
-			Dialog.addCheckbox("Run Analyze-particles to generate new roiManager values?", true);
-			Dialog.addMessage("This macro requires that all objects have been loaded into the ROI manager.\n \nThere are   " + nRES +"   results.\nThere are   " + nROIs +"   ROIs.");
+		nRes = nResults; /* Used to check for ROIs:Results mismatch */
+		if(nROIs==0 || nROIs!=nRes){
+			Dialog.create("ROI options: " + functionL);
+				Dialog.addMessage("This macro requires that all objects have been loaded into the ROI manager.\n \nThere are   " + nRes +"   results.\nThere are   " + nROIs +"   ROIs.\nDo you want to:");
+				if(nROIs==0) Dialog.addCheckbox("Import a saved ROI list",false);
+				else Dialog.addCheckbox("Replace the current ROI list with a saved ROI list",false);
+				if(nRes==0) Dialog.addCheckbox("Import a Results Table \(csv\) file",false);
+				else Dialog.addCheckbox("Clear Results Table and import saved csv",false);
+				Dialog.addCheckbox("Clear ROI list and Results Table and reanalyze \(overrides above selections\)",true);
+				if (!is("binary")) Dialog.addMessage("The active image is not binary, so it may require thresholding before analysis");
+				Dialog.addCheckbox("Get me out of here, I am having second thoughts . . .",false);
 			Dialog.show();
-			analyzeNow = Dialog.getCheckbox();
-			if (analyzeNow) {
+				importROI = Dialog.getCheckbox;
+				importResults = Dialog.getCheckbox;
+				runAnalyze = Dialog.getCheckbox;
+				if (Dialog.getCheckbox) restoreExit("Sorry this did not work out for you.");
+			if (runAnalyze) {
+				if (!is("binary")){
+					if (is("grayscale") && bitDepth()>8){
+						proceed = getBoolean("Image is grayscale but not 8-bit, convert it to 8-bit?", "Convert for thresholding", "Get me out of here");
+						if (proceed) run("8-bit");
+						else restoreExit("Goodbye, perhaps analyze first?");
+					}
+					if (bitDepth()==24){
+						colorThreshold = getBoolean("Active image is RGB, so analysis requires thresholding", "Color Threshold", "Convert to 8-bit and threshold");
+						if (colorThreshold) run("Color Threshold...");
+						else run("8-bit");
+					}
+					if (!is("binary")){
+						/* Quick-n-dirty threshold if not previously thresholded */
+						getThreshold(t1,t2);  
+						if (t1==-1)  {
+							run("Auto Threshold", "method=Default");
+							setOption("BlackBackground", false);
+							run("Make Binary");
+						}
+						if (is("Inverting LUT"))  {
+							trueLUT = getBoolean("The LUT appears to be inverted, do you want the true LUT?", "Yes Please", "No Thanks");
+							if (trueLUT) run("Invert LUT");
+						}
+					}
+				}
+				if (isOpen("ROI Manager"))	roiManager("reset");
 				setOption("BlackBackground", false);
-				if (nResults==0)
-					run("Analyze Particles...", "display add");
-				else run("Analyze Particles..."); /* Let user select settings */
+				if (isOpen("Results")) {
+					selectWindow("Results");
+					run("Close");
+				}
+				run("Analyze Particles..."); /* Let user select settings */
 				if (nResults!=roiManager("count"))
 					restoreExit("Results and ROI Manager counts do not match!");
 			}
-			else restoreExit("Goodbye, your previous setting will be restored.");
+			else {
+				if (importROI) {
+					if (isOpen("ROI Manager"))	roiManager("reset");
+					msg = "Import ROI set \(zip file\), click \"OK\" to continue to file chooser";
+					showMessage(msg);
+					roiManager("Open", "");
+				}
+				if (importResults){
+					if (isOpen("Results")) {
+						selectWindow("Results");
+						run("Close");
+					}
+					msg = "Import Results Table, click \"OK\" to continue to file chooser";
+					showMessage(msg);
+					open("");
+					Table.rename(Table.title, "Results");
+				}
+			}
 		}
+		nROIs = roiManager("count");
+		nRes = nResults; /* Used to check for ROIs:Results mismatch */
+		if(nROIs==0 || nROIs!=nRes)
+			restoreExit("Goodbye, your previous setting will be restored.");
 		return roiManager("count"); /* Returns the new count of entries */
 	}
 	function lnArray(arrayName) {				  
@@ -285,14 +351,14 @@ macro "Filter ROIs by Feature Value"{
 	Requires the versatile wand tool: https://imagej.nih.gov/ij/plugins/versatile-wand-tool/index.html by Michael Schmid
 	as built in wand does not select edge objects
 	1st version v190604
-	v190605 This version uses Gabriel Landini's morphology plugin if available
+	v190605 This version uses Gabriel Landini's morphology plugin if available.
+	v200102 Removed unnecessary print command.
 	*/
 		if (checkForPlugin("morphology_collection.jar")) run("BinaryKillBorders ", "top right bottom left");
 		else {
 			if (!checkForPlugin("Versatile_Wand_Tool.java") && !checkForPlugin("versatile_wand_tool.jar") && !checkForPlugin("Versatile_Wand_Tool.jar")) restoreExit("Versatile wand tool required");
 			run("Select None");
 			originalBGCol = getValue("color.background");
-			print(originalBGCol);
 			cWidth = getWidth()+2; cHeight = getHeight()+2;
 			run("Canvas Size...", "width=&cWidth height=&cHeight position=Center");
 			setColor("black");
@@ -324,22 +390,52 @@ macro "Filter ROIs by Feature Value"{
 		if(is("Inverting LUT")) run("Invert LUT");
 	}
 	function stripKnownExtensionFromString(string) {
-		if (lastIndexOf(string, ".")!=-1) {
-			knownExt = newArray("tif", "tiff", "TIF", "TIFF", "png", "PNG", "GIF", "gif", "jpg", "JPG", "jpeg", "JPEG", "jp2", "JP2", "txt", "TXT", "csv", "CSV");
-			for (i=0; i<knownExt.length; i++) {
+		/*	Note: Do not use on path as it may change the directory names
+		v210924: Tries to make sure string stays as string
+		v211014: Adds some additional cleanup
+		v211025: fixes multiple knowns issue
+		v211101: Added ".Ext_" removal
+		v211104: Restricts cleanup to end of string to reduce risk of corrupting path
+		v211112: Tries to fix trapped extension before channel listing. Adds xlsx extension.
+		*/
+		string = "" + string;
+		if (lastIndexOf(string, ".")>0 || lastIndexOf(string, "_lzw")>0) {
+			knownExt = newArray("dsx", "DSX", "tif", "tiff", "TIF", "TIFF", "png", "PNG", "GIF", "gif", "jpg", "JPG", "jpeg", "JPEG", "jp2", "JP2", "txt", "TXT", "csv", "CSV","xlsx","XLSX","_"," ");
+			kEL = lengthOf(knownExt);
+			chanLabels = newArray("\(red\)","\(green\)","\(blue\)");
+			unwantedSuffixes = newArray("_lzw"," ","  ", "__","--","_","-");
+			uSL = lengthOf(unwantedSuffixes);
+			for (i=0; i<kEL; i++) {
+				for (j=0; j<3; j++){ /* Looking for channel-label-trapped extensions */
+					ichanLabels = lastIndexOf(string, chanLabels[j]);
+					if(ichanLabels>0){
+						index = lastIndexOf(string, "." + knownExt[i]);
+						if (ichanLabels>index && index>0) string = "" + substring(string, 0, index) + "_" + chanLabels[j];
+						ichanLabels = lastIndexOf(string, chanLabels[j]);
+						for (k=0; k<uSL; k++){
+							index = lastIndexOf(string, unwantedSuffixes[k]);  /* common ASC suffix */
+							if (ichanLabels>index && index>0) string = "" + substring(string, 0, index) + "_" + chanLabels[j];	
+						}				
+					}
+				}
 				index = lastIndexOf(string, "." + knownExt[i]);
-				if (index>=(lengthOf(string)-(lengthOf(knownExt[i])+1))) string = substring(string, 0, index);
+				if (index>=(lengthOf(string)-(lengthOf(knownExt[i])+1)) && index>0) string = "" + substring(string, 0, index);
 			}
+		}
+		unwantedSuffixes = newArray("_lzw"," ","  ", "__","--","_","-");
+		for (i=0; i<lengthOf(unwantedSuffixes); i++){
+			sL = lengthOf(string);
+			if (endsWith(string,unwantedSuffixes[i])) string = substring(string,0,sL-lengthOf(unwantedSuffixes[i])); /* cleanup previous suffix */
 		}
 		return string;
 	}
 	function unCleanLabel(string) {
 	/* v161104 This function replaces special characters with standard characters for file system compatible filenames
-	+ 041117 to remove spaces as well */
+	+ 041117b to remove spaces as well */
 		string= replace(string, fromCharCode(178), "\\^2"); /* superscript 2 */
 		string= replace(string, fromCharCode(179), "\\^3"); /* superscript 3 UTF-16 (decimal) */
-		string= replace(string, fromCharCode(0xFE63) + fromCharCode(185), "\\^-1"); /* Small hypen substituted for superscript minus as 0x207B does not display in table */
-		string= replace(string, fromCharCode(0xFE63) + fromCharCode(178), "\\^-2"); /* Small hypen substituted for superscript minus as 0x207B does not display in table */
+		string= replace(string, fromCharCode(0xFE63) + fromCharCode(185), "\\^-1"); /* Small hyphen substituted for superscript minus as 0x207B does not display in table */
+		string= replace(string, fromCharCode(0xFE63) + fromCharCode(178), "\\^-2"); /* Small hyphen substituted for superscript minus as 0x207B does not display in table */
 		string= replace(string, fromCharCode(181), "u"); /* micron units */
 		string= replace(string, fromCharCode(197), "Angstrom"); /* Ångström unit symbol */
 		string= replace(string, fromCharCode(0x2009) + fromCharCode(0x00B0), "deg"); /* replace thin spaces degrees combination */
