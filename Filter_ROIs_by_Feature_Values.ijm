@@ -398,36 +398,51 @@ macro "Filter ROIs by Feature Value"{
 		v211104: Restricts cleanup to end of string to reduce risk of corrupting path
 		v211112: Tries to fix trapped extension before channel listing. Adds xlsx extension.
 		v220615: Tries to fix the fix for the trapped extensions ...
+		v230504: Protects directory path if included in string. Only removes doubled spaces and lines.
+		v230505: Unwanted dupes replaced by unusefulCombos.
+		v230607: Quick fix for infinite loop on one of while statements.
 		*/
+		fS = File.separator;
 		string = "" + string;
-		if (lastIndexOf(string, ".")>0 || lastIndexOf(string, "_lzw")>0) {
-			knownExt = newArray("dsx", "DSX", "tif", "tiff", "TIF", "TIFF", "png", "PNG", "GIF", "gif", "jpg", "JPG", "jpeg", "JPEG", "jp2", "JP2", "txt", "TXT", "csv", "CSV","xlsx","XLSX","_"," ");
-			kEL = lengthOf(knownExt);
-			chanLabels = newArray("\(red\)","\(green\)","\(blue\)");
-			unwantedSuffixes = newArray("_lzw"," ","  ", "__","--","_","-");
-			uSL = lengthOf(unwantedSuffixes);
-			for (i=0; i<kEL; i++) {
-				for (j=0; j<3; j++){ /* Looking for channel-label-trapped extensions */
-					ichanLabels = lastIndexOf(string, chanLabels[j]);
-					iExt = lastIndexOf(string, "." + knownExt[i]);
-					if(ichanLabels>0 && iExt>(ichanLabels+lengthOf(chanLabels[j]))){
-						iExt = lastIndexOf(string, "." + knownExt[i]);
-						if (ichanLabels>iExt && iExt>0) string = "" + substring(string, 0, iExt) + "_" + chanLabels[j];
-						ichanLabels = lastIndexOf(string, chanLabels[j]);
-						for (k=0; k<uSL; k++){
-							iExt = lastIndexOf(string, unwantedSuffixes[k]);  /* common ASC suffix */
-							if (ichanLabels>iExt && iExt>0) string = "" + substring(string, 0, iExt) + "_" + chanLabels[j];	
-						}				
-					}
-				}
-				iExt = lastIndexOf(string, "." + knownExt[i]);
-				if (iExt>=(lengthOf(string)-(lengthOf(knownExt[i])+1)) && iExt>0) string = "" + substring(string, 0, iExt);
+		protectedPathEnd = lastIndexOf(string,fS)+1;
+		if (protectedPathEnd>0){
+			protectedPath = substring(string,0,protectedPathEnd);
+			string = substring(string,protectedPathEnd);
+		}
+		unusefulCombos = newArray("-", "_"," ");
+		for (i=0; i<lengthOf(unusefulCombos); i++){
+			for (j=0; j<lengthOf(unusefulCombos); j++){
+				combo = unusefulCombos[i] + unusefulCombos[j];
+				while (indexOf(string,combo)>=0) string = replace(string,combo,unusefulCombos[i]);
 			}
 		}
-		unwantedSuffixes = newArray("_lzw"," ","  ", "__","--","_","-");
-		for (i=0; i<lengthOf(unwantedSuffixes); i++){
-			sL = lengthOf(string);
-			if (endsWith(string,unwantedSuffixes[i])) string = substring(string,0,sL-lengthOf(unwantedSuffixes[i])); /* cleanup previous suffix */
+		if (lastIndexOf(string, ".")>0 || lastIndexOf(string, "_lzw")>0) {
+			knownExt = newArray("dsx", "DSX", "tif", "tiff", "TIF", "TIFF", "png", "PNG", "GIF", "gif", "jpg", "JPG", "jpeg", "JPEG", "jp2", "JP2", "txt", "TXT", "csv", "CSV","xlsx","XLSX");
+			kEL = knownExt.length;
+			chanLabels = newArray("\(red\)","\(green\)","\(blue\)");
+			for (i=0,k=0; i<kEL; i++) {
+				kExtn = "." + knownExt[i];
+				for (j=0; j<3; j++){ /* Looking for channel-label-trapped extensions */
+					iChanLabels = lastIndexOf(string, chanLabels[j])-1;
+					if (iChanLabels>0){
+						preChan = substring(string,0,iChanLabels);
+						postChan = substring(string,iChanLabels);
+						while (indexOf(preChan,kExtn)>=0 && k<10){  /* k counter quick fix for infinite loop */
+							string = replace(preChan,kExtn,"") + postChan;
+							k++;
+						}
+					}
+				}
+				while (endsWith(string,kExtn)) string = "" + substring(string, 0, lastIndexOf(string, kExtn));
+			}
+		}
+		unwantedSuffixes = newArray("_lzw"," ", "_","-");
+		for (i=0; i<unwantedSuffixes.length; i++){
+			while (endsWith(string,unwantedSuffixes[i])) string = substring(string,0,string.length-lengthOf(unwantedSuffixes[i])); /* cleanup previous suffix */
+		}
+		if (protectedPathEnd>0){
+			if(!endsWith(protectedPath,fS)) protectedPath += fS;
+			string = protectedPath + string;
 		}
 		return string;
 	}
