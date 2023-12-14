@@ -1,11 +1,11 @@
 /*	FilterROIs by any combination of values in a results table
 	v190604b - 1st public version. Minor cosmetic tweaks and added log stats: v190607
 	v211025 Updated functions
-	v211104: Updated stripKnownExtensionsFromString function    211112, 220616, 220815: Updated functions
+	v211104: Updated stripKnownExtensionFromString function    211112, 220616, 220815, 220818: Updated functions f7: updated function stripKnownExtensionFromString. F10: Updated checkForRoiManager function.
  */
  
 macro "Filter ROIs by Feature Value"{
-	macroL = "ASC-Filter_ROIs_by_Feature_Values_v211112-f4.ijm";
+	macroL = "ASC-Filter_ROIs_by_Feature_Values_v211112-f10.ijm";
 	requires("1.52a");
 	// setBatchMode("true");
 	saveSettings;
@@ -20,9 +20,8 @@ macro "Filter ROIs by Feature Value"{
 	run("Select None");
 	if (roiManager("count")>0) roiManager("deselect");
 	id = getImageID();	t=getTitle(); /* get id of image and title */
-	checkForRoiManager(); /* macro requires that the objects are in the ROI manager */
+	nROIs = checkForRoiManager(); /* macro requires that the objects are in the ROI manager */
 	checkForResults(); /* macro requires that there are results to filter */
-	nROIs = roiManager("count");
 	nRES = nResults;
 	getPixelSize(unit, pixelWidth, pixelHeight);
 	menuLimit = 0.8 * screenHeight; /* used to limit menu size for small screens */
@@ -190,61 +189,72 @@ macro "Filter ROIs by Feature Value"{
 	/*
 		   ( 8(|)	( 8(|)	Functions	@@@@@:-)	@@@@@:-)
    */
-
-	function arrayToString(array,delimiters){
+	function arrayToString(array,delimiter){
 		/* 1st version April 2019 PJL
-			v190722 Modified to handle zero length array */
-		string = "";
+			v190722 Modified to handle zero length array
+			v201215 += stopped working so this shortcut has been replaced */
 		for (i=0; i<array.length; i++){
-			if (i==0) string += array[0];
-			else  string = string + delimiters + array[i];
+			if (i==0) string = "" + array[0];
+			else  string = string + delimiter + array[i];
 		}
 		return string;
 	}
 	function checkForPlugin(pluginName) {
 		/* v161102 changed to true-false
 			v180831 some cleanup
-			v210429 Expandable array version */
-		var pluginCheck = false;
-		if (getDirectory("plugins") == "") restoreExit("Failure to find any plugins!");
-		else pluginDir = getDirectory("plugins");
-		if (!endsWith(pluginName, ".jar")) pluginName = pluginName + ".jar";
-		if (File.exists(pluginDir + pluginName)) {
-				pluginCheck = true;
-				showStatus(pluginName + "found in: "  + pluginDir);
-		}
+			v210429 Expandable array version
+			v220510 Looks for both class and jar if no extension is given
+			v220818 Mystery issue fixed, no longer requires restoreExit	*/
+		pluginCheck = false;
+		if (getDirectory("plugins") == "") print("Failure to find any plugins!");
 		else {
-			pluginList = getFileList(pluginDir);
-			subFolderList = newArray;
-			for (i=0,subFolderCount=0; i<lengthOf(pluginList); i++) {
-				if (endsWith(pluginList[i], "/")) {
-					subFolderList[subFolderCount] = pluginList[i];
-					subFolderCount++;
-				}
-			}
-			for (i=0; i<lengthOf(subFolderList); i++) {
-				if (File.exists(pluginDir + subFolderList[i] +  "\\" + pluginName)) {
+			pluginDir = getDirectory("plugins");
+			if (lastIndexOf(pluginName,".")==pluginName.length-1) pluginName = substring(pluginName,0,pluginName.length-1);
+			pExts = newArray(".jar",".class");
+			knownExt = false;
+			for (j=0; j<lengthOf(pExts); j++) if(endsWith(pluginName,pExts[j])) knownExt = true;
+			pluginNameO = pluginName;
+			for (j=0; j<lengthOf(pExts) && !pluginCheck; j++){
+				if (!knownExt) pluginName = pluginName + pExts[j];
+				if (File.exists(pluginDir + pluginName)) {
 					pluginCheck = true;
-					showStatus(pluginName + " found in: " + pluginDir + subFolderList[i]);
-					i = lengthOf(subFolderList);
+					showStatus(pluginName + "found in: "  + pluginDir);
+				}
+				else {
+					pluginList = getFileList(pluginDir);
+					subFolderList = newArray;
+					for (i=0,subFolderCount=0; i<lengthOf(pluginList); i++) {
+						if (endsWith(pluginList[i], "/")) {
+							subFolderList[subFolderCount] = pluginList[i];
+							subFolderCount++;
+						}
+					}
+					for (i=0; i<lengthOf(subFolderList); i++) {
+						if (File.exists(pluginDir + subFolderList[i] +  "\\" + pluginName)) {
+							pluginCheck = true;
+							showStatus(pluginName + " found in: " + pluginDir + subFolderList[i]);
+							i = lengthOf(subFolderList);
+						}
+					}
 				}
 			}
 		}
 		return pluginCheck;
 	}
 	function checkForResults() {
+	/* NOTE: REQUIRES ASC restoreExit function which requires previous run of saveSettings */
 		nROIs = roiManager("count");
-		nRES = nResults;
-		if (nRES==0)	{
+		nRes = nResults;
+		if (nRes==0)	{
 			Dialog.create("No Results to Work With");
 			Dialog.addCheckbox("Run Analyze-particles to generate table?", true);
-			Dialog.addMessage("This macro requires a Results table to analyze.\n \nThere are   " + nRES +"   results.\nThere are    " + nROIs +"   ROIs.");
+			Dialog.addMessage("This macro requires a Results table to analyze.\n \nThere are   " + nRes +"   results.\nThere are    " + nROIs +"   ROIs.");
 			Dialog.show();
 			analyzeNow = Dialog.getCheckbox(); /* If (analyzeNow==true), ImageJ Analyze Particles will be performed, otherwise exit */
 			if (analyzeNow==true) {
 				if (roiManager("count")!=0) {
 					roiManager("deselect")
-					roiManager("delete"); 
+					roiManager("delete");
 				}
 				setOption("BlackBackground", false);
 				run("Analyze Particles..."); /* Let user select settings */
@@ -391,16 +401,11 @@ macro "Filter ROIs by Feature Value"{
 	}
 	function stripKnownExtensionFromString(string) {
 		/*	Note: Do not use on path as it may change the directory names
-		v210924: Tries to make sure string stays as string
-		v211014: Adds some additional cleanup
-		v211025: fixes multiple knowns issue
-		v211101: Added ".Ext_" removal
-		v211104: Restricts cleanup to end of string to reduce risk of corrupting path
-		v211112: Tries to fix trapped extension before channel listing. Adds xlsx extension.
-		v220615: Tries to fix the fix for the trapped extensions ...
-		v230504: Protects directory path if included in string. Only removes doubled spaces and lines.
-		v230505: Unwanted dupes replaced by unusefulCombos.
-		v230607: Quick fix for infinite loop on one of while statements.
+		v210924: Tries to make sure string stays as string.	v211014: Adds some additional cleanup.	v211025: fixes multiple 'known's issue.	v211101: Added ".Ext_" removal.
+		v211104: Restricts cleanup to end of string to reduce risk of corrupting path.	v211112: Tries to fix trapped extension before channel listing. Adds xlsx extension.
+		v220615: Tries to fix the fix for the trapped extensions ...	v230504: Protects directory path if included in string. Only removes doubled spaces and lines.
+		v230505: Unwanted dupes replaced by unusefulCombos.	v230607: Quick fix for infinite loop on one of while statements.
+		v230614: Added AVI.	v230905: Better fix for infinite loop. v230914: Added BMP and "_transp" and rearranged
 		*/
 		fS = File.separator;
 		string = "" + string;
@@ -417,26 +422,27 @@ macro "Filter ROIs by Feature Value"{
 			}
 		}
 		if (lastIndexOf(string, ".")>0 || lastIndexOf(string, "_lzw")>0) {
-			knownExt = newArray("dsx", "DSX", "tif", "tiff", "TIF", "TIFF", "png", "PNG", "GIF", "gif", "jpg", "JPG", "jpeg", "JPEG", "jp2", "JP2", "txt", "TXT", "csv", "CSV","xlsx","XLSX");
-			kEL = knownExt.length;
-			chanLabels = newArray("\(red\)","\(green\)","\(blue\)");
+			knownExts = newArray(".avi", ".csv", ".bmp", ".dsx", ".gif", ".jpg", ".jpeg", ".jp2", ".png", ".tif", ".txt", ".xlsx");
+			knownExts = Array.concat(knownExts,knownExts,"_transp","_lzw");
+			kEL = knownExts.length;
+			for (i=0; i<kEL/2; i++) knownExts[i] = toUpperCase(knownExts[i]);
+			chanLabels = newArray(" \(red\)"," \(green\)"," \(blue\)","\(red\)","\(green\)","\(blue\)");
 			for (i=0,k=0; i<kEL; i++) {
-				kExtn = "." + knownExt[i];
-				for (j=0; j<3; j++){ /* Looking for channel-label-trapped extensions */
+				for (j=0; j<chanLabels.length; j++){ /* Looking for channel-label-trapped extensions */
 					iChanLabels = lastIndexOf(string, chanLabels[j])-1;
 					if (iChanLabels>0){
 						preChan = substring(string,0,iChanLabels);
 						postChan = substring(string,iChanLabels);
-						while (indexOf(preChan,kExtn)>=0 && k<10){  /* k counter quick fix for infinite loop */
-							string = replace(preChan,kExtn,"") + postChan;
-							k++;
+						while (indexOf(preChan,knownExts[i])>0){
+							preChan = replace(preChan,knownExts[i],"");
+							string =  preChan + postChan;
 						}
 					}
 				}
-				while (endsWith(string,kExtn)) string = "" + substring(string, 0, lastIndexOf(string, kExtn));
+				while (endsWith(string,knownExts[i])) string = "" + substring(string, 0, lastIndexOf(string, knownExts[i]));
 			}
 		}
-		unwantedSuffixes = newArray("_lzw"," ", "_","-");
+		unwantedSuffixes = newArray(" ", "_","-");
 		for (i=0; i<unwantedSuffixes.length; i++){
 			while (endsWith(string,unwantedSuffixes[i])) string = substring(string,0,string.length-lengthOf(unwantedSuffixes[i])); /* cleanup previous suffix */
 		}
@@ -453,27 +459,28 @@ macro "Filter ROIs by Feature Value"{
 	+ v220128 add loops that allow removal of multiple duplication.
 	+ v220131 fixed so that suffix cleanup works even if extensions are included.
 	+ v220616 Minor index range fix that does not seem to have an impact if macro is working as planned. v220715 added 8-bit to unwanted dupes. v220812 minor changes to micron and Ångström handling
+	+ v231005 Replaced superscript abbreviations that did not work.
 	*/
 		/* Remove bad characters */
-		string= replace(string, fromCharCode(178), "\\^2"); /* superscript 2 */
-		string= replace(string, fromCharCode(179), "\\^3"); /* superscript 3 UTF-16 (decimal) */
-		string= replace(string, fromCharCode(0xFE63) + fromCharCode(185), "\\^-1"); /* Small hyphen substituted for superscript minus as 0x207B does not display in table */
-		string= replace(string, fromCharCode(0xFE63) + fromCharCode(178), "\\^-2"); /* Small hyphen substituted for superscript minus as 0x207B does not display in table */
-		string= replace(string, fromCharCode(181)+"m", "um"); /* micron units */
-		string= replace(string, getInfo("micrometer.abbreviation"), "um"); /* micron units */
-		string= replace(string, fromCharCode(197), "Angstrom"); /* Ångström unit symbol */
-		string= replace(string, fromCharCode(0x212B), "Angstrom"); /* the other Ångström unit symbol */
-		string= replace(string, fromCharCode(0x2009) + fromCharCode(0x00B0), "deg"); /* replace thin spaces degrees combination */
-		string= replace(string, fromCharCode(0x2009), "_"); /* Replace thin spaces  */
-		string= replace(string, "%", "pc"); /* % causes issues with html listing */
-		string= replace(string, " ", "_"); /* Replace spaces - these can be a problem with image combination */
+		string = string.replace(fromCharCode(178), "sup2"); /* superscript 2 */
+		string = string.replace(fromCharCode(179), "sup3"); /* superscript 3 UTF-16 (decimal) */
+		string = string.replace(fromCharCode(0xFE63) + fromCharCode(185), "sup-1"); /* Small hyphen substituted for superscript minus as 0x207B does not display in table */
+		string = string.replace(fromCharCode(0xFE63) + fromCharCode(178), "sup-2"); /* Small hyphen substituted for superscript minus as 0x207B does not display in table */
+		string = string.replace(fromCharCode(181)+"m", "um"); /* micron units */
+		string = string.replace(getInfo("micrometer.abbreviation"), "um"); /* micron units */
+		string = string.replace(fromCharCode(197), "Angstrom"); /* Ångström unit symbol */
+		string = string.replace(fromCharCode(0x212B), "Angstrom"); /* the other Ångström unit symbol */
+		string = string.replace(fromCharCode(0x2009) + fromCharCode(0x00B0), "deg"); /* replace thin spaces degrees combination */
+		string = string.replace(fromCharCode(0x2009), "_"); /* Replace thin spaces  */
+		string = string.replace("%", "pc"); /* % causes issues with html listing */
+		string = string.replace(" ", "_"); /* Replace spaces - these can be a problem with image combination */
 		/* Remove duplicate strings */
 		unwantedDupes = newArray("8bit","8-bit","lzw");
 		for (i=0; i<lengthOf(unwantedDupes); i++){
 			iLast = lastIndexOf(string,unwantedDupes[i]);
 			iFirst = indexOf(string,unwantedDupes[i]);
 			if (iFirst!=iLast) {
-				string = substring(string,0,iFirst) + substring(string,iFirst + lengthOf(unwantedDupes[i]));
+				string = string.substring(0,iFirst) + string.substring(iFirst + lengthOf(unwantedDupes[i]));
 				i=-1; /* check again */
 			}
 		}
@@ -481,11 +488,11 @@ macro "Filter ROIs by Feature Value"{
 		for (i=0; i<lengthOf(unwantedDbls); i++){
 			iFirst = indexOf(string,unwantedDbls[i]);
 			if (iFirst>=0) {
-				string = substring(string,0,iFirst) + substring(string,iFirst + lengthOf(unwantedDbls[i])/2);
+				string = string.substring(0,iFirst) + string.substring(string,iFirst + lengthOf(unwantedDbls[i])/2);
 				i=-1; /* check again */
 			}
 		}
-		string= replace(string, "_\\+", "\\+"); /* Clean up autofilenames */
+		string = string.replace("_\\+", "\\+"); /* Clean up autofilenames */
 		/* cleanup suffixes */
 		unwantedSuffixes = newArray(" ","_","-","\\+"); /* things you don't wasn't to end a filename with */
 		extStart = lastIndexOf(string,".");
